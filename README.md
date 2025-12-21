@@ -26,7 +26,7 @@
 
 ### 🎥 Demo Video (Coming Soon)
 
-![ICARUS Demo](https://via.placeholder.com/800x400/2563eb/ffffff?text=ICARUS+Demo+Video)
+![ICARUS Demo](https://www.youtube.com/watch?v=d00XuGWaBmg)
 
 *로봇이 컵을 인식하고 조작하는 모습*
 
