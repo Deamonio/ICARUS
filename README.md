@@ -780,7 +780,7 @@ chore: 기타 작업
 
 이 프로젝트는 MIT License 하에 배포됩니다.
 
-![License:  MIT](https://img.shields.io/badge/License-MIT-yellow.svg? style=for-the-badge)
+![License:  MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 
 **주요 내용:**
 - ✅ 상업적 사용 가능
