@@ -1,0 +1,24 @@
+# my_keypoint.yaml 파일 (수정됨)
+
+# 1. 데이터 경로 설정
+# Windows 경로의 슬래시를 정방향 슬래시(/)로 수정했습니다.
+path: C:/Users/pc/Documents/deamon/main
+
+# 훈련(Train) 및 검증(Validation) 데이터 폴더 경로
+train: images/train
+val: images/val
+
+# 2. 객체 클래스 (바운딩 박스) 설정
+nc: 1
+names:
+  0: Cup
+
+# 3. 키포인트 클래스 (Keypoint Detection) 설정
+# kpt_shape: [키포인트 개수, 차원(2=x,y or 3=x,y,visibility)]
+kpt_shape: [1, 3]
+
+# 3-2. 키포인트 이름 (kpt_names)
+kpt_names: ["Center"]
+
+# 3-3. 키포인트 연결선 (kpt_skeleton)
+kpt_skeleton: []
