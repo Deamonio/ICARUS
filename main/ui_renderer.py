@@ -138,8 +138,87 @@ class UIRenderer:
         max_x = bar_x + bar_width - max_text.get_width()
         self.screen.blit(max_text, (max_x, bar_y + bar_height + 2))
     
+    def draw_mode_control_panel(self, x, y, width, height):
+        """모드 제어 패널 (Passivity + IK Mode)"""
+        from config import Config
+        
+        panel_rect = pygame.Rect(x, y, width, height)
+        self.draw_shadow(panel_rect, 3, 150)
+        self.draw_rounded_rect(UIColors.PANEL_BG, panel_rect, radius=10, border_width=1, border_color=UIColors.BORDER_COLOR)
+        
+        inner_padding = 12
+        
+        # 제목
+        title = self.font_small.render("Mode Control", True, UIColors.ACCENT_DARK)
+        self.screen.blit(title, (x + inner_padding, y + 10))
+        
+        # Passivity 버튼
+        button_height = 32
+        button_spacing = 8
+        
+        passivity_rect = pygame.Rect(x + inner_padding, y + 35, width - inner_padding * 2, button_height)
+        
+        # IK 모드가 켜져있으면 Passivity 버튼 비활성화 (회색)
+        if Config.IK_MODE:
+            base_color = UIColors.TORQUE_HOVER  # 비활성화 회색
+            status_text = "PASSIVITY"
+        elif Config.PASSIVITY_MODE:
+            base_color = UIColors.TORQUE_OFF
+            status_text = "PASSIVITY"
+        else:
+            base_color = UIColors.TORQUE_ON
+            status_text = "CONTROLLER"
+        
+        mouse_pos = pygame.mouse.get_pos()
+        # IK 모드가 아닐 때만 hover 효과
+        if not Config.IK_MODE and passivity_rect.collidepoint(mouse_pos):
+            base_color = tuple(min(255, c + 30) for c in base_color)
+        
+        self.draw_shadow(passivity_rect, 2, 100)
+        self.draw_rounded_rect(base_color, passivity_rect, 7)
+        
+        status_surface = self.font_small.render(status_text, True, UIColors.WHITE)
+        status_x = passivity_rect.centerx - status_surface.get_width() // 2
+        status_y = passivity_rect.centery - status_surface.get_height() // 2
+        self.screen.blit(status_surface, (status_x, status_y))
+        
+        # IK Mode 버튼
+        ik_rect = pygame.Rect(x + inner_padding, y + 35 + button_height + button_spacing, 
+                             width - inner_padding * 2, button_height)
+        
+        # Passivity 모드가 켜져있으면 IK 버튼 비활성화 (회색)
+        if Config.PASSIVITY_MODE:
+            ik_color = UIColors.TORQUE_HOVER  # 비활성화 회색
+            ik_status = "IK MODE: OFF"
+        elif Config.IK_MODE:
+            ik_color = UIColors.ACCENT_BLUE
+            ik_status = "IK MODE: ON"
+        else:
+            ik_color = UIColors.TORQUE_OFF
+            ik_status = "IK MODE: OFF"
+        
+        # Passivity 모드가 아닐 때만 hover 효과
+        if not Config.PASSIVITY_MODE and ik_rect.collidepoint(mouse_pos):
+            ik_color = tuple(min(255, c + 30) for c in ik_color)
+        
+        self.draw_shadow(ik_rect, 2, 100)
+        self.draw_rounded_rect(ik_color, ik_rect, 7)
+        
+        ik_surface = self.font_small.render(ik_status, True, UIColors.WHITE)
+        ik_x = ik_rect.centerx - ik_surface.get_width() // 2
+        ik_y = ik_rect.centery - ik_surface.get_height() // 2
+        self.screen.blit(ik_surface, (ik_x, ik_y))
+
+        # 힌트 텍스트
+        hint = self.font_tiny.render("P: Passivity | I: IK Mode", True, UIColors.TEXT_GRAY)
+        hint_x = x + width // 2 - hint.get_width() // 2
+        hint_y = y + height - 18
+        self.screen.blit(hint, (hint_x, hint_y))
+        
+        return {'passivity': passivity_rect, 'ik': ik_rect}
+    
     def draw_torque_control_panel(self, x, y, width, height, all_torque_enabled: bool):
-        """토크 제어 패널"""
+        """토크 제어 패널 (레거시 - 사용 안 함)"""
         panel_rect = pygame.Rect(x, y, width, height)
         self.draw_shadow(panel_rect, 3, 150)
         self.draw_rounded_rect(UIColors.PANEL_BG, panel_rect, radius=10, border_width=1, border_color=UIColors.BORDER_COLOR)

@@ -105,8 +105,9 @@ class MotorController:
     
     def load_default_preset(self) -> bool:
         """Default 프리셋으로 이동"""
-        if Config.PASSIVITY_MODE:
-            print(f"{Colors.YELLOW}[Preset]{Colors.END} Cannot load preset in passivity mode")
+        if Config.PASSIVITY_MODE or Config.IK_MODE:
+            mode_name = "IK mode" if Config.IK_MODE else "passivity mode"
+            print(f"{Colors.YELLOW}[Preset]{Colors.END} Cannot load preset in {mode_name}")
             return False
         
         self.target_positions = [float(p) for p in self.default_preset.copy()]
@@ -115,8 +116,9 @@ class MotorController:
     
     def load_custom_preset(self, slot_index: int) -> bool:
         """Custom 프리셋으로 이동"""
-        if Config.PASSIVITY_MODE:
-            print(f"{Colors.YELLOW}[Preset]{Colors.END} Cannot load preset in passivity mode")
+        if Config.PASSIVITY_MODE or Config.IK_MODE:
+            mode_name = "IK mode" if Config.IK_MODE else "passivity mode"
+            print(f"{Colors.YELLOW}[Preset]{Colors.END} Cannot load preset in {mode_name}")
             return False
         
         if 0 <= slot_index < 4:
@@ -134,33 +136,48 @@ class MotorController:
         status = "ON" if self.torque_enabled[motor_index] else "OFF"
         print(f"{Colors.CYAN}[Torque]{Colors.END} M{motor_index+1} ({self.motors[motor_index].name}): {status}")
     
-    def toggle_all_torque(self) -> bool:
-        """모든 모터 토크 토글"""
-        new_state = not self.all_torque_enabled
-        self.all_torque_enabled = new_state
-        self.torque_enabled = [new_state] * len(self.motors)
+    def set_all_torque(self, enable: bool, enable_feedback: bool = None):
+        """모든 모터 토크 설정
+        
+        Args:
+            enable: 토크 활성화 여부
+            enable_feedback: 피드백 활성화 여부 (None이면 자동 결정: 토크 OFF 시 ON)
+        """
+        self.all_torque_enabled = enable
+        self.torque_enabled = [enable] * len(self.motors)
         self.send_torque_command()
-
-        Config.PASSIVITY_MODE = not new_state
-        if Config.PASSIVITY_MODE:
+        
+        # 피드백 설정
+        if enable_feedback is None:
+            enable_feedback = not enable  # 토크 OFF면 피드백 ON
+        
+        if enable_feedback:
             self.is_passivity_first = True
             self.passivity_initialized_motors = [False] * 7
             self.serial.send("2,1,0,0,0,0,0,0*")
-            print(f"{Colors.GREEN}[Feedback]{Colors.END} Feedback enabled (Passivity Mode)")
+            print(f"{Colors.GREEN}[Feedback]{Colors.END} Feedback enabled")
         else:
             self.is_passivity_first = False
             self.passivity_initialized_motors = [False] * 7
             self.serial.send("2,0,0,0,0,0,0,0*")
-            print(f"{Colors.YELLOW}[Feedback]{Colors.END} Feedback disabled (Normal Mode)")
+            print(f"{Colors.YELLOW}[Feedback]{Colors.END} Feedback disabled")
         
-        status = "enabled" if new_state else "disabled"
+        status = "enabled" if enable else "disabled"
         print(f"{Colors.YELLOW}[Torque]{Colors.END} ALL motors torque {status}")
+    
+    def toggle_all_torque(self) -> bool:
+        """모든 모터 토크 토글 (레거시 - Z키용)"""
+        new_state = not self.all_torque_enabled
+        
+        # 토크와 Passivity 모드를 함께 토글
+        Config.PASSIVITY_MODE = not new_state
+        self.set_all_torque(new_state, enable_feedback=Config.PASSIVITY_MODE)
         
         return new_state
     
     def update_target(self, motor_index: int, direction: str, step_size: int) -> bool:
         """모터 목표 위치 업데이트"""
-        if Config.PASSIVITY_MODE:
+        if Config.PASSIVITY_MODE or Config.IK_MODE:
             return False
         
         if not (0 <= motor_index < len(self.motors)):

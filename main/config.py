@@ -24,6 +24,7 @@ class Config:
     LOG_INTERVAL = 100
 
     PASSIVITY_MODE = False
+    IK_MODE = False
     SIMULATION_MODE = False
 
 @dataclass

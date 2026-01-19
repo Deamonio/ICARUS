@@ -49,7 +49,8 @@ class RobotControlApp:
         
         self.motor_info_cache = []
         self.preset_rects_cache = []
-        self.torque_button_rect_cache = None
+        self.passivity_button_rect_cache = None
+        self.ik_button_rect_cache = None
         
         print(f"{Colors.GREEN}[System]{Colors.END} Robot Control System initialized")
     
@@ -76,10 +77,50 @@ class RobotControlApp:
     
     def _handle_mouse_click(self, mouse_pos):
         """마우스 클릭 이벤트 처리"""
-        # 토크 버튼 클릭
-        if self.torque_button_rect_cache and self.torque_button_rect_cache.collidepoint(mouse_pos):
-            new_state = self.controller.toggle_all_torque()
-            self.action_text = f"ALL Motors Torque: {'ON' if new_state else 'OFF'}"
+        # Passivity 버튼 클릭 (IK 모드가 아닐 때만)
+        if self.passivity_button_rect_cache and self.passivity_button_rect_cache.collidepoint(mouse_pos):
+            if Config.IK_MODE:
+                self.action_text = "Cannot change mode while IK Mode is active"
+                return
+            
+            Config.PASSIVITY_MODE = not Config.PASSIVITY_MODE
+            if Config.PASSIVITY_MODE:
+                # Passivity 모드: 토크 끄고 피드백 켜기
+                Config.IK_MODE = False
+                self.controller.set_all_torque(enable=False, enable_feedback=True)
+                self.action_text = "Passivity Mode: ON (Torque OFF)"
+            else:
+                # Controller 모드: 토크 켜고 피드백 끄기
+                self.controller.set_all_torque(enable=True, enable_feedback=False)
+                self.action_text = "Controller Mode: ON (Torque ON)"
+        
+        # IK Mode 버튼 클릭 (Passivity 모드가 아닐 때만)
+        elif self.ik_button_rect_cache and self.ik_button_rect_cache.collidepoint(mouse_pos):
+            if Config.PASSIVITY_MODE:
+                self.action_text = "Cannot change mode while Passivity Mode is active"
+                return
+            
+            Config.IK_MODE = not Config.IK_MODE
+            if Config.IK_MODE:
+                # IK 모드: 토크 켜고 피드백 끄고 웹캠 시작
+                Config.PASSIVITY_MODE = False
+                self.controller.set_all_torque(enable=True, enable_feedback=False)
+                self.action_text = "IK Mode: ON (Webcam Starting...)"
+                # 웹캠 프로세스 시작
+                if not self.webcam_process or not self.webcam_process.is_alive():
+                    import multiprocessing
+                    self.webcam_process = multiprocessing.Process(target=webcam_process)
+                    self.webcam_process.daemon = True
+                    self.webcam_process.start()
+            else:
+                # IK 모드 종료: 웹캠 종료
+                self.action_text = "IK Mode: OFF (Webcam Stopped)"
+                if self.webcam_process and self.webcam_process.is_alive():
+                    self.webcam_process.terminate()
+                    self.webcam_process.join(timeout=1)
+                    if self.webcam_process.is_alive():
+                        self.webcam_process.kill()
+                    self.webcam_process = None
         
         # 프리셋 버튼 클릭
         for preset_data in self.preset_rects_cache:
@@ -134,18 +175,66 @@ class RobotControlApp:
             self.action_text = f"Logging {status}"
             print(f"{Colors.CYAN}[Logger]{Colors.END} {status}")
         
-        elif event.key == pygame.K_z and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
-            new_state = self.controller.toggle_all_torque()
-            self.action_text = f"ALL Motors Torque: {'ON' if new_state else 'OFF'}"
+        elif event.key == pygame.K_p and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
+            Config.PASSIVITY_MODE = not Config.PASSIVITY_MODE
+            if Config.PASSIVITY_MODE:
+                Config.IK_MODE = False
+                self.controller.set_all_torque(enable=False, enable_feedback=True)
+                self.action_text = "Passivity Mode: ON"
+            else:
+                self.controller.set_all_torque(enable=True, enable_feedback=False)
+                self.action_text = "Controller Mode: ON"
         
-        elif not Config.PASSIVITY_MODE:
+        elif event.key == pygame.K_i and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
+            Config.IK_MODE = not Config.IK_MODE
+            if Config.IK_MODE:
+                Config.PASSIVITY_MODE = False
+                self.controller.set_all_torque(enable=True, enable_feedback=False)
+                self.action_text = "IK Mode: ON"
+                if not self.webcam_process or not self.webcam_process.is_alive():
+                    import multiprocessing
+                    self.webcam_process = multiprocessing.Process(target=webcam_process)
+                    self.webcam_process.daemon = True
+                    self.webcam_process.start()
+            else:
+                self.action_text = "IK Mode: OFF"
+                if self.webcam_process and self.webcam_process.is_alive():
+                    self.webcam_process.terminate()
+                    self.webcam_process.join(timeout=1)
+                    if self.webcam_process.is_alive():
+                        self.webcam_process.kill()
+                    self.webcam_process = None
+                self.controller.set_all_torque(True)
+                self.action_text = "Controller Mode: ON"
+        
+        elif event.key == pygame.K_i and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
+            Config.IK_MODE = not Config.IK_MODE
+            if Config.IK_MODE:
+                Config.PASSIVITY_MODE = False
+                self.controller.set_all_torque(True)
+                self.action_text = "IK Mode: ON"
+                if not self.webcam_process or not self.webcam_process.is_alive():
+                    import multiprocessing
+                    self.webcam_process = multiprocessing.Process(target=webcam_process)
+                    self.webcam_process.daemon = True
+                    self.webcam_process.start()
+            else:
+                self.action_text = "IK Mode: OFF"
+                if self.webcam_process and self.webcam_process.is_alive():
+                    self.webcam_process.terminate()
+                    self.webcam_process.join(timeout=1)
+                    if self.webcam_process.is_alive():
+                        self.webcam_process.kill()
+                    self.webcam_process = None
+        
+        elif not Config.PASSIVITY_MODE and not Config.IK_MODE:
             self._handle_normal_mode_keys(event, current_time)
         
         elif Config.PASSIVITY_MODE:
             self._handle_passivity_mode_keys(event)
     
     def _handle_normal_mode_keys(self, event, current_time):
-        """일반 모드 키 입력 처리"""
+        """일반 모드 키 입력 처리 (Passivity와 IK 모드가 모두 꺼져있을 때만)"""
         # F1: Default 프리셋
         if event.key == pygame.K_F1:
             if self.controller.load_default_preset():
@@ -184,7 +273,8 @@ class RobotControlApp:
                     self.action_text = f"Failed to save preset: {preset_name}"
         else:
             if event.key in self.key_mapping or event.key == pygame.K_F1:
-                self.action_text = "Motor control disabled in Passivity Mode"
+                mode_text = "Passivity Mode" if Config.PASSIVITY_MODE else "IK Mode"
+                self.action_text = f"Motor control disabled in {mode_text}"
     
     def _handle_motor_control_key(self, key, current_time):
         """모터 제어 키 처리"""
@@ -210,7 +300,10 @@ class RobotControlApp:
             del self.last_command_time[event.key]
     
     def _handle_key_repeat(self, current_time):
-        """키 반복 처리"""
+        """키 반복 처리 (IK 모드에서는 비활성화)"""
+        if Config.IK_MODE:
+            return
+        
         for key in list(self.keys_pressed.keys()):
             if key in self.key_mapping and current_time >= self.last_command_time.get(key, 0):
                 motor_index, direction = self.key_mapping[key]
@@ -278,11 +371,12 @@ class RobotControlApp:
         right_panel_x = gauge_start_x + 2 * GAUGE_WIDTH + SPACING * 2
         right_panel_y = gauge_start_y
         
-        # 토크 제어 패널
-        self.torque_button_rect_cache = self.renderer.draw_torque_control_panel(
-            right_panel_x, right_panel_y, RIGHT_PANEL_WIDTH, TORQUE_PANEL_HEIGHT,
-            self.controller.all_torque_enabled
+        # 모드 제어 패널 (Passivity + IK Mode)
+        button_rects = self.renderer.draw_mode_control_panel(
+            right_panel_x, right_panel_y, RIGHT_PANEL_WIDTH, TORQUE_PANEL_HEIGHT
         )
+        self.passivity_button_rect_cache = button_rects['passivity']
+        self.ik_button_rect_cache = button_rects['ik']
         
         # 프리셋 패널
         preset_y = right_panel_y + TORQUE_PANEL_HEIGHT + SPACING
@@ -313,10 +407,8 @@ class RobotControlApp:
     
     def run(self):
         """메인 루프"""
-        print(f"{Colors.CYAN}[System]{Colors.END} Starting webcam process...")
-        self.webcam_process = multiprocessing.Process(target=webcam_process)
-        self.webcam_process.daemon = True
-        self.webcam_process.start()
+        print(f"{Colors.CYAN}[System]{Colors.END} Robot Control System started")
+        print(f"{Colors.YELLOW}[Info]{Colors.END} Press 'I' key or click IK Mode button to start webcam")
         
         while self.running:
             self.handle_events()

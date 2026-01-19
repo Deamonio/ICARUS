@@ -133,12 +133,15 @@ def webcam_process():
             model = None
             yolo_enabled = False
         
-        # 웹캠 열기 (DirectShow 백엔드 사용)
-        cap = cv2.VideoCapture(2, cv2.CAP_DSHOW)
+        # 웹캠 열기 (DSHOW 백엔드로 카메라 0 사용)
+        print(f"{Colors.CYAN}[Webcam]{Colors.END} Opening camera 0 with DSHOW backend...")
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         
         if not cap.isOpened():
-            print(f"{Colors.RED}[Webcam]{Colors.END} Failed to open webcam")
+            print(f"{Colors.RED}[Webcam]{Colors.END} Failed to open camera 0 with DSHOW")
             return
+        
+        print(f"{Colors.GREEN}[Webcam]{Colors.END} Camera 0 opened successfully")
         
         cap.set(3, WINDOW_WIDTH)
         cap.set(4, WINDOW_HEIGHT)
@@ -153,7 +156,7 @@ def webcam_process():
         except Exception:
             pass
         
-        print(f"{Colors.GREEN}[Webcam]{Colors.END} Webcam started successfully (DirectShow)")
+        print(f"{Colors.GREEN}[Webcam]{Colors.END} Webcam started successfully")
         print(f"{Colors.YELLOW}[Controls]{Colors.END} 'q': quit, 'r': reset calibration, 'c': clear points")
         print(f"{Colors.YELLOW}[Controls]{Colors.END} '[': decrease exposure, ']': increase exposure, 't': toggle auto-exposure")
         print(f"{Colors.YELLOW}[Controls]{Colors.END} 'm': toggle manual/auto mode, 'p': toggle point mode")
