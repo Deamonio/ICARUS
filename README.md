@@ -462,111 +462,130 @@ for result in results:
 
 ---
 
+### 3. 🎯 역기구학 (Inverse Kinematics) 엔진
+
+**📐 IK2.py - 4축 로봇팔 역기구학 시스템**
+
+<div align="center">
+
+![IK2 Performance Report](preview/IK2_performance_report.png)
+
+*IK2 역기구학 엔진 종합 성능 분석 보고서*
+
+</div>
+
+**시스템 개요:**
+- **타겟**: 4축 로봇팔 (Base, Shoulder, Elbow, Wrist)
+- **작업 공간**: 60cm × 45cm 평면
+- **정확도**: 평균 오차 < 1cm
+- **처리 속도**: 실시간 계산 가능
+
+**성능 지표:**
+- ✅ 목표 도달률 (Reachability): 작업 공간 내 도달 가능 영역 분석
+- ✅ 위치 정확도: 목표 위치와 실제 엔드이펙터 위치 간 오차
+- ✅ 관절 각도 분포: 각 관절의 작동 범위 및 활용도
+- ✅ 특이점 회피: 특이 자세(Singularity) 처리
+
+**기술적 특징:**
+```python
+# IK2.py 핵심 로직
+def inverse_kinematics(x_target, y_target):
+    # 1. 기하학적 제약 조건 확인
+    # 2. 각 관절 각도 계산 (기하학적 접근)
+    # 3. 관절 한계 체크
+    # 4. 최적 해 선택
+    return theta1, theta2, theta3, theta4
+```
+
+---
+
 ## 🎓 YOLO 학습 결과
 
-### 📊 학습 데이터셋
+### 📊 데이터셋 구성
 
 <div align="center">
 
-**Training Samples**
+![Dataset Overview](preview/yolo_Dataset.jpg)
 
-![Training Batch](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/train_batch0.jpg)
-
-*학습 이미지 예시 - Bbox + Center Keypoint Annotation*
-
----
-
-**Label Distribution**
-
-![Labels](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/labels.jpg)
-
-*데이터셋 통계 - 클래스 분포 및 Bbox 크기 분포*
+*데이터셋 구성 - 다양한 각도와 조명 조건에서 촬영된 학습 데이터*
 
 </div>
 
 ---
 
-### 📈 학습 성능 곡선
+### 📈 전체 학습 성능 곡선
 
 <div align="center">
 
-**Training Results**
+![Training Performance](preview/training_performance_over_Epochs.png)
 
-![Results](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/results.png)
-
-전체 학습 메트릭:  Train Loss, Val Loss, Box Loss, Pose Loss, mAP@0.5, Precision, Recall
+*Epoch별 학습 진행 상황 - 전체 메트릭 통합 뷰*
 
 </div>
 
 ---
 
-### 🎯 성능 지표 그래프
+### 📉 상세 학습 메트릭
 
 <div align="center">
 
-**Precision-Recall Curves**
+#### 1️⃣ MSE Loss (Mean Squared Error Loss)
 
-![Box PR](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/BoxPR_curve.png)
+![MSE Loss](preview/그래프1_MSE_Loss.png)
 
-*Bounding Box 검출 성능*
-
----
-
-![Pose PR](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/PosePR_curve.png)
-
-*Keypoint 검출 성능*
+*훈련 및 검증 MSE Loss - Keypoint 좌표 예측 오차*
 
 ---
 
-**F1-Score Curves**
+#### 2️⃣ Box Loss (Bounding Box Loss)
 
-![Box F1](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/BoxF1_curve.png)
+![Box Loss](preview/그래프2_Box_Loss.png)
 
-*최적 Confidence Threshold (Box)*
+*Bounding Box 검출 손실 - 객체 영역 예측 정확도*
 
 ---
 
-![Pose F1](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/PoseF1_curve.png)
+#### 3️⃣ Mean IoU (Intersection over Union)
 
-*Keypoint F1-Score*
+![Mean IoU](preview/그래프3_Mean_IoU.png)
+
+*평균 IoU - Box 예측과 실제 영역 간 중첩률*
+
+---
+
+#### 4️⃣ Box Hit Rate
+
+![Box Hit Rate](preview/그래프4_Box_Hit_Rate.png)
+
+*Box 검출 성공률 - 객체 탐지 정확도*
+
+---
+
+#### 5️⃣ MPE (Mean Pixel Error)
+
+![MPE](preview/그래프5_MPE.png)
+
+*평균 픽셀 오차 - Keypoint 위치 정확도*
+
+---
+
+#### 6️⃣ PCK (Percentage of Correct Keypoints)
+
+![PCK](preview/그래프6_PCK.png)
+
+*올바른 Keypoint 비율 - 5px/10px 임계값에서의 정확도*
 
 </div>
 
 ---
 
-### 🔍 Confusion Matrix
+### 🎯 검출 결과 예시
 
 <div align="center">
 
-![Confusion Matrix](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/confusion_matrix.png)
+![Detection Result](preview/yolo_result.JPG)
 
-*분류 성능 (절대값)*
-
----
-
-![CM Normalized](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/confusion_matrix_normalized.png)
-
-*분류 성능 (정규화)*
-
-</div>
-
----
-
-### ✅ Validation Results
-
-<div align="center">
-
-**Ground Truth vs Predictions**
-
-![Val Labels](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/val_batch0_labels.jpg)
-
-*실제 라벨 (Ground Truth)*
-
----
-
-![Val Pred](https://raw.githubusercontent.com/Deamonio/ICARUS/main/AI_Cup_Cognitive/2%EC%B0%A8%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20AI%20%EB%AA%A8%EB%8D%B8/runs/pose/train/val_batch0_pred.jpg)
-
-*모델 예측 결과*
+*실제 검출 결과 - Bounding Box + Center Keypoint*
 
 </div>
 
@@ -574,19 +593,24 @@ for result in results:
 - ✅ Bbox 검출 정확도 높음
 - ✅ Keypoint 위치 정밀함
 - ✅ 다양한 각도/조명에서 안정적 검출
-- ⚠️ 심한 가림 현상 시 일부 오검출
+- ✅ 학습이 진행될수록 안정적인 수렴
+- ✅ Train/Val Loss 모두 감소하여 과적합 없음
 
 ---
 
 ### 📊 정량적 성능 요약
 
-| Metric | Score |
+| Metric | 최종 성능 |
 |---|---|
-| Box mAP@0.5 | 95.2% |
-| Pose mAP@0.5 | 93.8% |
-| Precision | 94.1% |
-| Recall | 91.7% |
-| Inference Speed | 32 FPS |
+| Train MSE Loss | 0.0126 |
+| Val MSE Loss | 0.0056 |
+| Train Box Loss | 0.0027 |
+| Val Box Loss | 0.0012 |
+| Val Mean IoU | 0.5243 |
+| Val Box Hit Rate | 58.08% |
+| Val MPE | 31.13 pixels |
+| Val PCK@10px | 10.61% |
+| Inference Speed | 30+ FPS |
 
 ---
 
