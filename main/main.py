@@ -1,282 +1,397 @@
-from ultralytics import YOLO
-import cv2
+"""
+로봇 팔 제어 시스템 - 메인 애플리케이션
+7-DOF 로봇 팔 제어 대시보드
+"""
 import sys
-import numpy as np
+import time
+import pygame
+import multiprocessing
 
-# 기본 설정
-DEFAULT_CAM_INDEX = 1
-DEFAULT_WEIGHTS = 'best.pt'
-WINDOW_NAME = 'YOLO Real-time Detection'
-WINDOW_WIDTH = 1280
-WINDOW_HEIGHT = 720
+# 로컬 모듈 임포트
+from config import Config, Colors, UIColors
+from motor_controller import MotorController
+from ui_renderer import UIRenderer
+from data_logger import DataLogger
+from webcam import webcam_process
 
-# 테이블 실제 크기(cm) (필요에 따라 조정)
-TABLE_WIDTH_CM = 60.0
-TABLE_HEIGHT_CM = 45.0
-
-# Display adjustments
-BRIGHTNESS_FACTOR = 0.9  # <1.0 to darken the image (smaller -> darker)
-
-# Exposure defaults (may be backend / camera dependent)
-# If your camera expects positive exposure (ms), use positive values; for many DirectShow cameras
-# smaller (more negative) numbers reduce brightness. Adjust if needed.
-DEFAULT_AUTO_EXPOSURE = False
-# Manual exposure initial value (camera dependent scale)
-DEFAULT_EXPOSURE = -3
-
-# Text rendering settings
-TEXT_FONT = cv2.FONT_HERSHEY_SIMPLEX
-TEXT_SCALE = 0.8
-TEXT_THICK = 1
-TEXT_LINE = cv2.LINE_AA
-TEXT_COLOR = (255, 255, 255)
-# Top-left info text color (neat, non-black/white)
-TOP_TEXT_COLOR = (200, 230, 255)
-
-# 캘리브레이션 관련 전역 변수
-calibration_corners = []  # 사용자가 클릭한 4개의 코너 (픽셀 좌표)
-is_calibrated = False
-perspective_matrix = None
-additional_points = []  # 캘리브레이션 이후 사용자가 찍은 추가 점(픽셀)
-
-
-def mouse_callback(event, x, y, flags, param):
-    global calibration_corners, is_calibrated, additional_points
-    if event == cv2.EVENT_LBUTTONDOWN:
-        if not is_calibrated:
-            if len(calibration_corners) < 4:
-                calibration_corners.append((x, y))
-                print(f"코너 점 {len(calibration_corners)}: {x}, {y}")
+class RobotControlApp:
+    """메인 애플리케이션 클래스"""
+    
+    def __init__(self):
+        pygame.init()
+        self.screen = pygame.display.set_mode((Config.SCREEN_WIDTH, Config.SCREEN_HEIGHT))
+        pygame.display.set_caption("Manipulator Robot Control System")
+        
+        self.controller = MotorController()
+        self.renderer = UIRenderer(self.screen)
+        self.logger = DataLogger()
+        
+        self.clock = pygame.time.Clock()
+        
+        # 웹캠 프로세스 초기화
+        self.webcam_process = None
+        self.running = True
+        
+        self.keys_pressed = {}
+        self.last_command_time = {}
+        self.action_text = "System Ready"
+        self.active_preset = None
+        
+        self.key_mapping = {
+            pygame.K_q: (0, "increase"), pygame.K_a: (0, "decrease"),
+            pygame.K_w: (1, "increase"), pygame.K_s: (1, "decrease"),
+            pygame.K_e: (2, "increase"), pygame.K_d: (2, "decrease"),
+            pygame.K_r: (3, "increase"), pygame.K_f: (3, "decrease"),
+            pygame.K_t: (4, "increase"), pygame.K_g: (4, "decrease"),
+            pygame.K_y: (5, "increase"), pygame.K_h: (5, "decrease"),
+            pygame.K_u: (6, "increase"), pygame.K_j: (6, "decrease"),
+        }
+        
+        self.motor_info_cache = []
+        self.preset_rects_cache = []
+        self.torque_button_rect_cache = None
+        
+        print(f"{Colors.GREEN}[System]{Colors.END} Robot Control System initialized")
+    
+    def handle_events(self):
+        """이벤트 처리"""
+        current_time = pygame.time.get_ticks()
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                self._handle_mouse_click(pygame.mouse.get_pos())
+            
+            elif event.type == pygame.KEYDOWN:
+                self._handle_key_down(event, current_time)
+            
+            elif event.type == pygame.KEYUP:
+                self._handle_key_up(event)
+        
+        # 키 반복 처리
+        if not Config.PASSIVITY_MODE:
+            self._handle_key_repeat(current_time)
+    
+    def _handle_mouse_click(self, mouse_pos):
+        """마우스 클릭 이벤트 처리"""
+        # 토크 버튼 클릭
+        if self.torque_button_rect_cache and self.torque_button_rect_cache.collidepoint(mouse_pos):
+            new_state = self.controller.toggle_all_torque()
+            self.action_text = f"ALL Motors Torque: {'ON' if new_state else 'OFF'}"
+        
+        # 프리셋 버튼 클릭
+        for preset_data in self.preset_rects_cache:
+            if preset_data['rect'].collidepoint(mouse_pos):
+                self._handle_preset_click(preset_data)
+    
+    def _handle_preset_click(self, preset_data):
+        """프리셋 버튼 클릭 처리"""
+        preset_name = preset_data['name']
+        preset_type = preset_data['type']
+        preset_index = preset_data['index']
+        
+        mods = pygame.key.get_mods()
+        
+        if not Config.PASSIVITY_MODE:
+            # 일반 모드: 로드 및 저장 가능
+            if preset_type == 'default':
+                if self.controller.load_default_preset():
+                    self.active_preset = 'Default'
+                    self.action_text = f"Loaded preset: Default"
+                    self.logger.log(self.controller.target_positions, "Preset: Default")
+            
+            elif preset_type == 'custom':
+                if mods & pygame.KMOD_CTRL:
+                    self.controller.save_custom_preset(preset_index)
+                    self.action_text = f"Saved preset: {preset_name}"
+                    self.logger.log(self.controller.target_positions, f"Saved: {preset_name}")
+                else:
+                    if self.controller.load_custom_preset(preset_index):
+                        self.active_preset = preset_name
+                        self.action_text = f"Loaded preset: {preset_name}"
+                        self.logger.log(self.controller.target_positions, f"Preset: {preset_name}")
         else:
-            additional_points.append((x, y))
-            print(f"추가 점 클릭: {x}, {y}")
+            # Passivity 모드: 저장만 가능
+            if preset_type == 'custom' and (mods & pygame.KMOD_CTRL):
+                if self.controller.save_custom_preset(preset_index):
+                    self.action_text = f"Saved preset: {preset_name} (Passivity)"
+                    self.logger.log(self.controller.target_positions, f"Saved: {preset_name}")
+                else:
+                    self.action_text = f"Failed to save preset: {preset_name}"
+            else:
+                self.action_text = "Preset loading disabled in Passivity Mode"
+    
+    def _handle_key_down(self, event, current_time):
+        """키보드 누름 이벤트 처리"""
+        if event.key == pygame.K_ESCAPE:
+            self.running = False
+        
+        elif event.key == pygame.K_l:
+            self.logger.enabled = not self.logger.enabled
+            status = "enabled" if self.logger.enabled else "disabled"
+            self.action_text = f"Logging {status}"
+            print(f"{Colors.CYAN}[Logger]{Colors.END} {status}")
+        
+        elif event.key == pygame.K_z and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
+            new_state = self.controller.toggle_all_torque()
+            self.action_text = f"ALL Motors Torque: {'ON' if new_state else 'OFF'}"
+        
+        elif not Config.PASSIVITY_MODE:
+            self._handle_normal_mode_keys(event, current_time)
+        
+        elif Config.PASSIVITY_MODE:
+            self._handle_passivity_mode_keys(event)
+    
+    def _handle_normal_mode_keys(self, event, current_time):
+        """일반 모드 키 입력 처리"""
+        # F1: Default 프리셋
+        if event.key == pygame.K_F1:
+            if self.controller.load_default_preset():
+                self.active_preset = 'Default'
+                self.action_text = f"Loaded preset: Default"
+                self.logger.log(self.controller.target_positions, "Preset: Default")
+        
+        # F2-F5: Custom 프리셋
+        elif event.key in [pygame.K_F2, pygame.K_F3, pygame.K_F4, pygame.K_F5]:
+            mods = pygame.key.get_mods()
+            slot_index = event.key - pygame.K_F2
+            preset_name = f"Custom {slot_index + 1}"
+            
+            if not (mods & pygame.KMOD_CTRL):
+                if self.controller.load_custom_preset(slot_index):
+                    self.active_preset = preset_name
+                    self.action_text = f"Loaded preset: {preset_name}"
+                    self.logger.log(self.controller.target_positions, f"Preset: {preset_name}")
+        
+        # 모터 제어 키
+        elif event.key in self.key_mapping and event.key not in self.keys_pressed:
+            self._handle_motor_control_key(event.key, current_time)
+    
+    def _handle_passivity_mode_keys(self, event):
+        """Passivity 모드 키 입력 처리"""
+        if event.key in [pygame.K_F2, pygame.K_F3, pygame.K_F4, pygame.K_F5]:
+            mods = pygame.key.get_mods()
+            if mods & pygame.KMOD_CTRL:
+                slot_index = event.key - pygame.K_F2
+                preset_name = f"Custom {slot_index + 1}"
+                
+                if self.controller.save_custom_preset(slot_index):
+                    self.action_text = f"Saved preset: {preset_name} (Passivity)"
+                    self.logger.log(self.controller.target_positions, f"Saved: {preset_name}")
+                else:
+                    self.action_text = f"Failed to save preset: {preset_name}"
+        else:
+            if event.key in self.key_mapping or event.key == pygame.K_F1:
+                self.action_text = "Motor control disabled in Passivity Mode"
+    
+    def _handle_motor_control_key(self, key, current_time):
+        """모터 제어 키 처리"""
+        motor_index, direction = self.key_mapping[key]
+        
+        mods = pygame.key.get_mods()
+        step_size = Config.SLOW_STEP_SIZE if mods & pygame.KMOD_SHIFT else Config.FAST_STEP_SIZE
+        
+        if self.controller.update_target(motor_index, direction, step_size):
+            self.controller.send_control_command()
+            motor_info = self.controller.get_motor_info(motor_index)
+            self.action_text = f"M{motor_index+1} ({motor_info['name']}): {int(motor_info['target'])}"
+            self.active_preset = None
+        
+        self.keys_pressed[key] = True
+        self.last_command_time[key] = current_time + Config.KEY_REPEAT_DELAY
+    
+    def _handle_key_up(self, event):
+        """키보드 떼기 이벤트 처리"""
+        if event.key in self.keys_pressed:
+            del self.keys_pressed[event.key]
+        if event.key in self.last_command_time:
+            del self.last_command_time[event.key]
+    
+    def _handle_key_repeat(self, current_time):
+        """키 반복 처리"""
+        for key in list(self.keys_pressed.keys()):
+            if key in self.key_mapping and current_time >= self.last_command_time.get(key, 0):
+                motor_index, direction = self.key_mapping[key]
+                mods = pygame.key.get_mods()
+                step_size = Config.SLOW_STEP_SIZE if mods & pygame.KMOD_SHIFT else Config.FAST_STEP_SIZE
+                
+                if self.controller.update_target(motor_index, direction, step_size):
+                    self.controller.send_control_command()
+                
+                self.last_command_time[key] = current_time + Config.KEY_REPEAT_INTERVAL
+    
+    def update(self):
+        """상태 업데이트"""
+        self.controller.process_feedback()
+        self.controller.update_positions()
+        self.logger.log(self.controller.current_positions)
+    
+    def render(self):
+        """화면 렌더링"""
+        self.screen.fill(UIColors.LIGHT_GRAY)
+        
+        # 레이아웃 상수
+        PADDING = 15
+        SPACING = 12
+        
+        GAUGE_WIDTH = 360
+        GAUGE_HEIGHT = 120
+        
+        RIGHT_PANEL_WIDTH = 230
+        TORQUE_PANEL_HEIGHT = 110
+        PRESET_PANEL_HEIGHT = 280
+        
+        CONTROL_PANEL_HEIGHT = 105
+        
+        # 헤더
+        header = self.renderer.font_title.render("Manipulator Robot Control Dashboard", True, UIColors.ACCENT_DARK)
+        self.screen.blit(header, (PADDING, PADDING))
+        
+        mode_text = "Simulation Mode" if Config.SIMULATION_MODE else "Production Mode"
+        passivity_text = f"Passivity: {Config.PASSIVITY_MODE}"
+        
+        subtitle = self.renderer.font_tiny.render(
+            f"7-DOF Control System | {mode_text} | {passivity_text}", 
+            True, UIColors.TEXT_GRAY
+        )
+        self.screen.blit(subtitle, (PADDING, PADDING + 35))
+        
+        # 모터 게이지 (2열 4행)
+        gauge_start_x = PADDING
+        gauge_start_y = PADDING + 60
+        
+        self.motor_info_cache = []
+        for i in range(7):
+            row = i // 2
+            col = i % 2
+            
+            x = gauge_start_x + col * (GAUGE_WIDTH + SPACING)
+            y = gauge_start_y + row * (GAUGE_HEIGHT + SPACING)
+            
+            motor_info = self.controller.get_motor_info(i)
+            self.motor_info_cache.append(motor_info)
+            self.renderer.draw_motor_gauge(x, y, GAUGE_WIDTH, GAUGE_HEIGHT, motor_info, i)
+        
+        # 우측 패널
+        right_panel_x = gauge_start_x + 2 * GAUGE_WIDTH + SPACING * 2
+        right_panel_y = gauge_start_y
+        
+        # 토크 제어 패널
+        self.torque_button_rect_cache = self.renderer.draw_torque_control_panel(
+            right_panel_x, right_panel_y, RIGHT_PANEL_WIDTH, TORQUE_PANEL_HEIGHT,
+            self.controller.all_torque_enabled
+        )
+        
+        # 프리셋 패널
+        preset_y = right_panel_y + TORQUE_PANEL_HEIGHT + SPACING
+        
+        self.preset_rects_cache = self.renderer.draw_preset_panel(
+            right_panel_x, preset_y, RIGHT_PANEL_WIDTH, PRESET_PANEL_HEIGHT, 
+            self.controller.default_preset,
+            self.controller.custom_presets, 
+            self.active_preset
+        )
+        
+        # 하단 제어 패널
+        motor_section_bottom = gauge_start_y + 4 * GAUGE_HEIGHT + 3 * SPACING
+        panel_y = motor_section_bottom + SPACING + 5
+        
+        if panel_y + CONTROL_PANEL_HEIGHT > Config.SCREEN_HEIGHT - PADDING:
+            panel_y = Config.SCREEN_HEIGHT - CONTROL_PANEL_HEIGHT - PADDING
+        
+        self.renderer.draw_control_panel(
+            panel_y,
+            self.action_text,
+            self.controller.is_connected(),
+            self.logger.enabled,
+            self.logger.filename
+        )
+        
+        pygame.display.flip()
+    
+    def run(self):
+        """메인 루프"""
+        print(f"{Colors.CYAN}[System]{Colors.END} Starting webcam process...")
+        self.webcam_process = multiprocessing.Process(target=webcam_process)
+        self.webcam_process.daemon = True
+        self.webcam_process.start()
+        
+        while self.running:
+            self.handle_events()
+            self.update()
+            self.render()
+            self.clock.tick(60)
+        
+        self.shutdown()
+    
+    def shutdown(self):
+        """종료 처리"""
+        print(f"{Colors.YELLOW}[System]{Colors.END} Shutting down...")
+        
+        # 웹캠 프로세스 종료
+        if self.webcam_process and self.webcam_process.is_alive():
+            print(f"{Colors.CYAN}[System]{Colors.END} Terminating webcam process...")
+            self.webcam_process.terminate()
+            self.webcam_process.join(timeout=2)
+            if self.webcam_process.is_alive():
+                self.webcam_process.kill()
+            print(f"{Colors.GREEN}[System]{Colors.END} Webcam process terminated")
+        
+        self.action_text = "System Shutdown"
+        self.controller.shutdown()
+        
+        pygame.quit()
+        sys.exit()
 
+def print_banner():
+    """시작 배너 출력"""
+    banner = f"""
+{Colors.CYAN}════════════════════════════════════════════════════════════════════════════════
 
-def order_points(pts):
-    rect = np.zeros((4, 2), dtype="float32")
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
-    return rect
+  {Colors.BLUE}███╗   ███╗ █████╗ ███╗   ██╗██╗██████╗ ██╗   ██╗██╗      █████╗ ████████╗{Colors.CYAN}
+  {Colors.BLUE}████╗ ████║██╔══██╗████╗  ██║██║██╔══██╗██║   ██║██║     ██╔══██╗╚══██╔══╝{Colors.CYAN}
+  {Colors.BLUE}██╔████╔██║███████║██╔██╗ ██║██║██████╔╝██║   ██║██║     ███████║   ██║{Colors.CYAN}
+  {Colors.BLUE}██║╚██╔╝██║██╔══██║██║╚██╗██║██║██╔═══╝ ██║   ██║██║     ██╔══██║   ██║{Colors.CYAN}
+  {Colors.BLUE}██║ ╚═╝ ██║██║  ██║██║ ╚████║██║██║     ╚██████╔╝███████╗██║  ██║   ██║{Colors.CYAN}
+  {Colors.BLUE}╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝╚═╝       ╚═════╝ ╚══════╝╚═╝  ╚═╝   ╚═╝{Colors.CYAN}
 
+  {Colors.GREEN}██████╗  ██████╗ ██████╗  ██████╗ ████████╗{Colors.CYAN}
+  {Colors.GREEN}██╔══██╗██╔═══██╗██╔══██╗██╔═══██╗╚══██╔══╝{Colors.CYAN}
+  {Colors.GREEN}██████╔╝██║   ██║██████╔╝██║   ██║   ██║{Colors.CYAN}
+  {Colors.GREEN}██╔══██╗██║   ██║██╔══██╗██║   ██║   ██║{Colors.CYAN}
+  {Colors.GREEN}██║  ██║╚██████╔╝██████╔╝╚██████╔╝   ██║{Colors.CYAN}
+  {Colors.GREEN}╚═╝  ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝    ╚═╝{Colors.CYAN}
 
-def draw_grid_and_axes(img, matrix, w_cm, h_cm):
-    try:
-        _, inv_matrix = cv2.invert(matrix)
-        # 10cm 간격으로 격자 그리기
-        for x in range(0, int(w_cm) + 1, 10):
-            p1 = cv2.perspectiveTransform(np.array([[[x, 0]]], dtype=np.float32), inv_matrix)
-            p2 = cv2.perspectiveTransform(np.array([[[x, h_cm]]], dtype=np.float32), inv_matrix)
-            cv2.line(img, tuple(p1[0][0].astype(int)), tuple(p2[0][0].astype(int)), (0, 255, 255), 1)
-        for y in range(0, int(h_cm) + 1, 10):
-            p1 = cv2.perspectiveTransform(np.array([[[0, y]]], dtype=np.float32), inv_matrix)
-            p2 = cv2.perspectiveTransform(np.array([[[w_cm, y]]], dtype=np.float32), inv_matrix)
-            cv2.line(img, tuple(p1[0][0].astype(int)), tuple(p2[0][0].astype(int)), (0, 255, 255), 1)
-        origin = cv2.perspectiveTransform(np.array([[[0, 0]]], dtype=np.float32), inv_matrix)
-        cv2.circle(img, tuple(origin[0][0].astype(int)), 5, (0, 0, 255), -1)
-    except Exception:
-        pass
+  {Colors.YELLOW}7-DOF Robotic Arm Control System{Colors.CYAN}
+  {Colors.WHITE}Version 2.1 | Python + PyGame + Serial Communication{Colors.CYAN}
 
+════════════════════════════════════════════════════════════════════════════════{Colors.END}
+"""
+    print(banner)
 
 def main():
-    global is_calibrated, perspective_matrix, calibration_corners, additional_points
-
-    print("--- Loading model ---")
+    """메인 진입점"""
+    multiprocessing.freeze_support()
+    
     try:
-        model = YOLO(DEFAULT_WEIGHTS)
-    except Exception as e:
-        print(f"Model load failed: {e}\nContinuing without model.")
+        print_banner()
+        time.sleep(0.5)
         
-        model = None
-
-    cap = cv2.VideoCapture(DEFAULT_CAM_INDEX, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        print(f"카메라 {DEFAULT_CAM_INDEX}을(를) 열 수 없습니다.")
+        print(f"{Colors.CYAN}[System]{Colors.END} Starting Robot Control System...\n")
+        
+        app = RobotControlApp()
+        app.run()
+        
+    except KeyboardInterrupt:
+        print(f"\n{Colors.YELLOW}[System]{Colors.END} Interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"{Colors.RED}[ERROR]{Colors.END} {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
-    cap.set(3, WINDOW_WIDTH)
-    cap.set(4, WINDOW_HEIGHT)
-
-    # Try to configure exposure: disable auto exposure and set manual exposure value
-    try:
-        # Attempt to set auto exposure off (backend dependent)
-        if DEFAULT_AUTO_EXPOSURE:
-            cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)  # auto (value may vary by backend)
-        else:
-            # Many OpenCV builds use 0.25 for manual mode with DirectShow
-            cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
-            cap.set(cv2.CAP_PROP_EXPOSURE, DEFAULT_EXPOSURE)
-    except Exception:
-        pass
-
-    # Query initial exposure values for feedback
-    try:
-        current_auto = cap.get(cv2.CAP_PROP_AUTO_EXPOSURE)
-        current_exposure = cap.get(cv2.CAP_PROP_EXPOSURE)
-    except Exception:
-        current_auto = -1
-        current_exposure = -1
-    print(f"AutoExposure={current_auto}, Exposure={current_exposure}")
-    print("Controls: '[' decrease exposure, ']' increase exposure, 't' toggle auto-exposure, 'q' quit")
-
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-    try:
-        cv2.resizeWindow(WINDOW_NAME, WINDOW_WIDTH, WINDOW_HEIGHT)
-    except Exception:
-        pass
-    cv2.setMouseCallback(WINDOW_NAME, mouse_callback)
-
-    # cm 기준의 테이블 코너 (TL, TR, BR, BL)
-    real_corners = np.float32([
-        [0, 0],
-        [TABLE_WIDTH_CM, 0],
-        [TABLE_WIDTH_CM, TABLE_HEIGHT_CM],
-        [0, TABLE_HEIGHT_CM]
-    ])
-
-    print("Click 4 table corners (any order). After calibration, click additional points to see cm coordinates.")
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # Darken frame slightly for display
-        try:
-            frame = cv2.convertScaleAbs(frame, alpha=BRIGHTNESS_FACTOR, beta=0)
-        except Exception:
-            pass
-
-        # Before calibration
-        if not is_calibrated:
-            cv2.putText(frame, f"Corners clicked: {len(calibration_corners)}/4", (20, 40), TEXT_FONT, TEXT_SCALE, TEXT_COLOR, TEXT_THICK, TEXT_LINE)
-            for pt in calibration_corners:
-                cv2.circle(frame, pt, 5, (0, 255, 0), -1)
-            if len(calibration_corners) == 4:
-                pts_src = np.array(calibration_corners, dtype="float32")
-                pts_src = order_points(pts_src)
-                perspective_matrix = cv2.getPerspectiveTransform(pts_src, real_corners)
-                is_calibrated = True
-                print("Calibration complete")
-
-        else:
-            if perspective_matrix is not None:
-                draw_grid_and_axes(frame, perspective_matrix, TABLE_WIDTH_CM, TABLE_HEIGHT_CM)
-
-                # Prepare top-left lines for display (additional points + detected objects)
-                lines = []
-                for idx_pt, pt in enumerate(additional_points, start=1):
-                    cv2.circle(frame, pt, 8, (255, 0, 255), -1)
-                    vec = np.array([[[pt[0], pt[1]]]], dtype=np.float32)
-                    real_pt = cv2.perspectiveTransform(vec, perspective_matrix)
-                    cm_x = real_pt[0][0][0]
-                    cm_y = real_pt[0][0][1]
-                    lines.append(f"Point {idx_pt}: ({cm_x:.1f}, {cm_y:.1f}) cm")
-
-                # Object detection: collect coordinates for top-left display and draw boxes/centers
-                if model is not None:
-                    try:
-                        results = model(frame)
-                        res0 = results[0]
-                        if res0.boxes:
-                            for i, box in enumerate(res0.boxes, start=1):
-                                x1, y1, x2, y2 = map(int, box.xyxy[0])
-
-                                # Prefer model keypoints if available (take highest-confidence keypoint)
-                                used_kp = None
-                                try:
-                                    if hasattr(res0, 'keypoints') and res0.keypoints is not None:
-                                        kp_entry = res0.keypoints.data[i-1]
-                                        kps = np.array(kp_entry)
-                                        if kps.ndim == 3:
-                                            kps = kps[0]
-                                        # find best keypoint by confidence (third column)
-                                        best_conf = -1
-                                        best_kp = None
-                                        for kp in kps:
-                                            if kp[2] > best_conf:
-                                                best_conf = float(kp[2])
-                                                best_kp = kp
-                                        if best_kp is not None and best_conf >= 0.5:
-                                            used_kp = best_kp
-                                except Exception:
-                                    used_kp = None
-
-                                if used_kp is not None:
-                                    cx = int(used_kp[0])
-                                    cy = int(used_kp[1])
-                                else:
-                                    cx = int((x1 + x2) / 2)
-                                    cy = int((y1 + y2) / 2)
-
-                                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 100, 0), 2)
-                                cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
-
-                                vec = np.array([[[cx, cy]]], dtype=np.float32)
-                                real_pt = cv2.perspectiveTransform(vec, perspective_matrix)
-                                cm_x = real_pt[0][0][0]
-                                cm_y = real_pt[0][0][1]
-
-                                lines.append(f"Obj {i}: X:{cm_x:.1f} Y:{cm_y:.1f} cm")
-                    except Exception as e:
-                        print(f"Model processing error: {e}")
-
-                # Render collected lines at top-left
-                for li, line in enumerate(lines):
-                    y = 30 + li * 26
-                    cv2.putText(frame, line, (10, y), TEXT_FONT, 0.8, TOP_TEXT_COLOR, TEXT_THICK, TEXT_LINE)
-
-        key = cv2.waitKey(1) & 0xFF
-        # Exposure/runtime controls
-        if key == ord('q'):
-            break
-        if key == ord('t'):
-            # toggle auto exposure
-            try:
-                current_auto = cap.get(cv2.CAP_PROP_AUTO_EXPOSURE)
-                if current_auto > 0.5:
-                    # switch to manual
-                    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
-                    cap.set(cv2.CAP_PROP_EXPOSURE, DEFAULT_EXPOSURE)
-                else:
-                    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
-                print("Toggled auto exposure. AutoExposure=", cap.get(cv2.CAP_PROP_AUTO_EXPOSURE), "Exposure=", cap.get(cv2.CAP_PROP_EXPOSURE))
-            except Exception:
-                print("Failed to toggle auto exposure for this backend/camera")
-        if key == ord('['):
-            try:
-                val = cap.get(cv2.CAP_PROP_EXPOSURE)
-                new = val - 1
-                cap.set(cv2.CAP_PROP_EXPOSURE, new)
-                print("Exposure set to", cap.get(cv2.CAP_PROP_EXPOSURE))
-            except Exception:
-                print("Failed to decrease exposure")
-        if key == ord(']'):
-            try:
-                val = cap.get(cv2.CAP_PROP_EXPOSURE)
-                new = val + 1
-                cap.set(cv2.CAP_PROP_EXPOSURE, new)
-                print("Exposure set to", cap.get(cv2.CAP_PROP_EXPOSURE))
-            except Exception:
-                print("Failed to increase exposure")
-        if key == ord('r'):
-            calibration_corners = []
-            is_calibrated = False
-            perspective_matrix = None
-            additional_points = []
-            print("Calibration reset")
-        if key == ord('c'):
-            additional_points = []
-            print("Additional points cleared")
-
-        cv2.imshow(WINDOW_NAME, frame)
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
