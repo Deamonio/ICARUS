@@ -208,12 +208,6 @@ class UIRenderer:
         ik_x = ik_rect.centerx - ik_surface.get_width() // 2
         ik_y = ik_rect.centery - ik_surface.get_height() // 2
         self.screen.blit(ik_surface, (ik_x, ik_y))
-
-        # 힌트 텍스트
-        hint = self.font_tiny.render("P: Passivity | I: IK Mode", True, UIColors.TEXT_GRAY)
-        hint_x = x + width // 2 - hint.get_width() // 2
-        hint_y = y + height - 18
-        self.screen.blit(hint, (hint_x, hint_y))
         
         return {'passivity': passivity_rect, 'ik': ik_rect}
     

@@ -306,7 +306,7 @@ class RobotControlApp:
         GAUGE_HEIGHT = 120
         
         RIGHT_PANEL_WIDTH = 230
-        TORQUE_PANEL_HEIGHT = 110
+        TORQUE_PANEL_HEIGHT = 120
         PRESET_PANEL_HEIGHT = 280
         
         CONTROL_PANEL_HEIGHT = 105

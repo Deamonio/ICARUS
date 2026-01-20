@@ -61,22 +61,31 @@ class Colors:
     END = '\033[0m'
 
 class UIColors:
-    """PyGame UI 색상 팔레트"""
+    """PyGame UI 색상 팔레트 - 블랙 앤 화이트 딥 다크 모드"""
+    # 배경 & 베이스 (모노크롬 블랙)
     WHITE = (255, 255, 255)
-    LIGHT_GRAY = (245, 247, 250)
-    PANEL_BG = (255, 255, 255)
-    CARD_SHADOW = (200, 202, 206)
-    ACCENT_BLUE = (37, 99, 235)
-    ACCENT_DARK = (17, 24, 39)
-    TEXT_DARK = (31, 41, 55)
-    TEXT_GRAY = (107, 114, 128)
-    TEXT_LIGHT = (156, 163, 175)
-    SUCCESS_GREEN = (16, 185, 129)
-    WARNING_ORANGE = (251, 146, 60)
-    ERROR_RED = (239, 68, 68)
-    PROGRESS_BG = (229, 231, 235)
-    BORDER_COLOR = (229, 231, 235)
-    PRESET_PURPLE = (124, 58, 237)
-    TORQUE_ON = (34, 197, 94)
-    TORQUE_OFF = (107, 114, 128)
-    TORQUE_HOVER = (75, 85, 99)
+    LIGHT_GRAY = (10, 10, 10)  # 거의 블랙 배경
+    PANEL_BG = (25, 25, 28)  # 다크 그레이 패널
+    CARD_SHADOW = (0, 0, 0)  # 블랙 그림자
+    
+    # 액센트 컬러 (화이트/그레이 중심)
+    ACCENT_BLUE = (200, 200, 200)  # 밝은 그레이 (블루 대신)
+    ACCENT_DARK = (240, 240, 240)  # 거의 화이트
+    
+    # 텍스트 (모노크롬)
+    TEXT_DARK = (240, 240, 240)  # 거의 화이트
+    TEXT_GRAY = (160, 160, 160)  # 중간 그레이
+    TEXT_LIGHT = (120, 120, 120)  # 어두운 그레이
+    
+    # 상태 컬러 (최소한의 컬러, 차분하게)
+    SUCCESS_GREEN = (80, 200, 120)  # 차분한 그린
+    WARNING_ORANGE = (220, 180, 80)  # 차분한 골드
+    ERROR_RED = (220, 100, 100)  # 차분한 레드
+    
+    # UI 요소 (그레이 중심)
+    PROGRESS_BG = (40, 40, 45)  # 다크 그레이
+    BORDER_COLOR = (60, 60, 65)  # 경계선 그레이
+    PRESET_PURPLE = (120, 120, 130)  # 차분한 다크 그레이 (튀지 않게)
+    TORQUE_ON = (80, 200, 120)  # 초록색 (Controller ON - 잘 보이게)
+    TORQUE_OFF = (80, 80, 85)  # 어두운 그레이 (OFF 상태)
+    TORQUE_HOVER = (160, 160, 165)  # 호버 그레이
