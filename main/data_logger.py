@@ -3,6 +3,7 @@
 모터 데이터를 CSV 파일에 기록
 """
 import csv
+import os
 import pygame
 from datetime import datetime
 from typing import List
@@ -12,10 +13,15 @@ class DataLogger:
     """모터 데이터 로깅"""
     
     def __init__(self, filename: str = None):
+        # log 폴더 생성
+        log_dir = "log"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
         if filename is None:
             filename = f"robot_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         
-        self.filename = filename
+        self.filename = os.path.join(log_dir, filename)
         self.last_log_time = 0
         self.enabled = True
         

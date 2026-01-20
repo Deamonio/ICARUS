@@ -267,9 +267,9 @@ class UIRenderer:
         save_hint = self.font_tiny.render("Ctrl+F2-F5: Save", True, UIColors.TEXT_GRAY)
         self.screen.blit(save_hint, (x + inner_padding, y + 28))
         
-        button_y = y + 50
-        button_height = 32
-        button_spacing = 8
+        button_y = y + 48
+        button_height = 30
+        button_spacing = 6
         
         button_rects = []
         mouse_pos = pygame.mouse.get_pos()
@@ -300,12 +300,12 @@ class UIRenderer:
         button_y += button_height + button_spacing
         
         # 구분선
-        divider_y = button_y + 6
+        divider_y = button_y + 4
         
         custom_label = self.font_tiny.render("CUSTOM", True, UIColors.TEXT_LIGHT)
         label_width = custom_label.get_width()
         label_x = x + width // 2 - label_width // 2
-        self.screen.blit(custom_label, (label_x, divider_y - 5))
+        self.screen.blit(custom_label, (label_x, divider_y - 7))
         
         line_margin = 6
         left_line_start = x + inner_padding + 10
@@ -321,7 +321,7 @@ class UIRenderer:
                         (right_line_start, divider_y), 
                         (right_line_end, divider_y), 1)
         
-        button_y += 18
+        button_y += 14
         
         # Custom 프리셋 4개
         custom_preset_names = [f"Custom {i+1}" for i in range(4)]
@@ -351,6 +351,28 @@ class UIRenderer:
             self.screen.blit(hint, (x + width - inner_padding - 25, button_y + i * (button_height + button_spacing) + 10))
         
         return button_rects
+    
+    def draw_reconnect_button(self, x, y, width, height):
+        """재연결 버튼 (Simulation 모드일 때 - 작은 버튼)"""
+        button_rect = pygame.Rect(x, y, width, height)
+        
+        # 버튼 색상 (골드)
+        base_color = (220, 180, 80)
+        
+        mouse_pos = pygame.mouse.get_pos()
+        if button_rect.collidepoint(mouse_pos):
+            base_color = tuple(min(255, c + 30) for c in base_color)
+        
+        self.draw_shadow(button_rect, 2, 80)
+        self.draw_rounded_rect(base_color, button_rect, radius=5)
+        
+        # 텍스트 (직관적으로)
+        text = self.font_tiny.render("Connect", True, UIColors.TEXT_DARK)
+        text_x = button_rect.centerx - text.get_width() // 2
+        text_y = button_rect.centery - text.get_height() // 2
+        self.screen.blit(text, (text_x, text_y))
+        
+        return button_rect
     
     def draw_control_panel(self, panel_y: int, status_msg: str, is_connected: bool, is_logging: bool, log_filename: str):
         """하단 제어 패널"""
@@ -457,3 +479,71 @@ class UIRenderer:
             self.screen.blit(key_text, (right_section_x, shortcut_y))
             self.screen.blit(desc_text, (right_section_x + 78, shortcut_y))
             shortcut_y += 14
+    
+    def draw_log_panel(self, x, y, width, height, log_messages: List[str]):
+        """로그 패널 (CMD 스타일 시스템 로그 - 색상 포함)"""
+        import re
+        
+        # ANSI 색상 코드 매핑
+        ansi_colors = {
+            '91': (239, 68, 68),    # RED
+            '92': (80, 200, 120),   # GREEN
+            '93': (220, 180, 80),   # YELLOW
+            '94': (96, 165, 250),   # BLUE
+            '95': (217, 70, 239),   # MAGENTA
+            '96': (34, 211, 238),   # CYAN
+            '97': (241, 245, 249),  # WHITE
+            '90': (120, 120, 120),  # GRAY
+        }
+        
+        panel_rect = pygame.Rect(x, y, width, height)
+        
+        # 그림자 및 배경
+        self.draw_shadow(panel_rect, 3, 150)
+        self.draw_rounded_rect(UIColors.PANEL_BG, panel_rect, radius=10, border_width=2, border_color=UIColors.BORDER_COLOR)
+        
+        inner_padding = 10
+        
+        # 제목
+        title = self.font_small.render("System Log", True, UIColors.ACCENT_DARK)
+        self.screen.blit(title, (x + inner_padding, y + 10))
+        
+        # 로그 영역
+        log_start_y = y + 35
+        log_area_height = height - 45
+        line_height = 15
+        
+        # 표시 가능한 라인 수 계산
+        max_lines = int(log_area_height / line_height)
+        
+        # 최근 로그부터 표시 (아래에서 위로 채우기)
+        visible_logs = log_messages[-max_lines:] if len(log_messages) > max_lines else log_messages
+        
+        for i, log_msg in enumerate(visible_logs):
+            log_y = log_start_y + i * line_height
+            current_x = x + inner_padding
+            
+            # ANSI 색상 코드 파싱
+            parts = re.split(r'(\033\[[0-9;]+m)', log_msg)
+            current_color = UIColors.TEXT_GRAY
+            
+            for part in parts:
+                if part.startswith('\033['):
+                    # 색상 코드 추출
+                    color_code = re.search(r'\033\[([0-9;]+)m', part)
+                    if color_code:
+                        code = color_code.group(1)
+                        if code in ansi_colors:
+                            current_color = ansi_colors[code]
+                        elif code == '0' or code == '':  # RESET
+                            current_color = UIColors.TEXT_GRAY
+                elif part:  # 실제 텍스트
+                    # 텍스트 렌더링
+                    text_surface = self.font_tiny.render(part, True, current_color)
+                    
+                    # 화면 범위 체크
+                    if current_x + text_surface.get_width() > x + width - inner_padding:
+                        break
+                    
+                    self.screen.blit(text_surface, (current_x, log_y))
+                    current_x += text_surface.get_width()

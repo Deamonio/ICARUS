@@ -6,6 +6,8 @@ import sys
 import time
 import pygame
 import multiprocessing
+from collections import deque
+from datetime import datetime
 
 # 로컬 모듈 임포트
 from config import Config, Colors, UIColors
@@ -20,7 +22,15 @@ class RobotControlApp:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((Config.SCREEN_WIDTH, Config.SCREEN_HEIGHT))
-        pygame.display.set_caption("Manipulator Robot Control System")
+        pygame.display.set_caption("I.C.A.R.U.S Control Dashboard")
+        
+        # 아이콘 설정 (파일이 있는 경우)
+        try:
+            icon = pygame.image.load('assets/logo.png')
+            icon = pygame.transform.scale(icon, (1000, 1000))  # 아이콘 크기 대폭 확대
+            pygame.display.set_icon(icon)
+        except:
+            pass  # 아이콘 파일이 없어도 계속 진행
         
         self.controller = MotorController()
         self.renderer = UIRenderer(self.screen)
@@ -55,7 +65,30 @@ class RobotControlApp:
         # IK 모드 활성화 전 Passivity 상태 저장
         self.last_passivity_state = False
         
+        # 로그 패널용
+        self.log_messages = deque(maxlen=100)  # 최근 100개 로그 저장
+        self._setup_log_capture()
+        
         print(f"{Colors.GREEN}[System]{Colors.END} Robot Control System initialized")
+    
+    def _setup_log_capture(self):
+        """로그 캡처 설정 (stdout 리다이렉션)"""
+        class LogCapture:
+            def __init__(self, original_stdout, log_deque):
+                self.original_stdout = original_stdout
+                self.log_deque = log_deque
+            
+            def write(self, message):
+                self.original_stdout.write(message)
+                if message.strip():  # 빈 메시지 제외
+                    # ANSI 색상 코드를 그대로 저장 (색상 정보 유지)
+                    timestamp = datetime.now().strftime('%H:%M:%S')
+                    self.log_deque.append(f"[{timestamp}] {message.strip()}")
+            
+            def flush(self):
+                self.original_stdout.flush()
+        
+        sys.stdout = LogCapture(sys.__stdout__, self.log_messages)
     
     def _toggle_passivity_mode(self):
         """Passivity 모드 토글"""
@@ -307,12 +340,12 @@ class RobotControlApp:
         
         RIGHT_PANEL_WIDTH = 230
         TORQUE_PANEL_HEIGHT = 120
-        PRESET_PANEL_HEIGHT = 280
+        PRESET_PANEL_HEIGHT = 252  # M6(3행) 높이: 120*3 + 12*2 = 384 -> 252로 조정
         
         CONTROL_PANEL_HEIGHT = 105
         
         # 헤더
-        header = self.renderer.font_title.render("Manipulator Robot Control Dashboard", True, UIColors.ACCENT_DARK)
+        header = self.renderer.font_title.render("I.C.A.R.U.S Control Dashboard", True, UIColors.ACCENT_DARK)
         self.screen.blit(header, (PADDING, PADDING))
         
         mode_text = "Simulation Mode" if Config.SIMULATION_MODE else "Production Mode"
@@ -340,9 +373,17 @@ class RobotControlApp:
             self.motor_info_cache.append(motor_info)
             self.renderer.draw_motor_gauge(x, y, GAUGE_WIDTH, GAUGE_HEIGHT, motor_info, i)
         
-        # 우측 패널
+        # 우측 패널 위치 계산 (로그 패널에서 사용하기 위해 먼저 계산)
         right_panel_x = gauge_start_x + 2 * GAUGE_WIDTH + SPACING * 2
         right_panel_y = gauge_start_y
+        
+        # 로그 패널 (M7 옆 - 가로로 길게)
+        log_panel_x = gauge_start_x + GAUGE_WIDTH + SPACING
+        log_panel_y = gauge_start_y + 3 * (GAUGE_HEIGHT + SPACING)  # M7 위치
+        # 가로를 right_panel까지 확장
+        log_panel_width = right_panel_x - log_panel_x + RIGHT_PANEL_WIDTH
+        log_panel_height = GAUGE_HEIGHT  # M7과 같은 높이
+        self.renderer.draw_log_panel(log_panel_x, log_panel_y, log_panel_width, log_panel_height, list(self.log_messages))
         
         # 모드 제어 패널 (Passivity + IK Mode)
         button_rects = self.renderer.draw_mode_control_panel(
@@ -350,6 +391,16 @@ class RobotControlApp:
         )
         self.passivity_button_rect_cache = button_rects['passivity']
         self.ik_button_rect_cache = button_rects['ik']
+        
+        # Reconnect 버튼 (Simulation 모드일 때만 - 우측 상단 작은 버튼)
+        if Config.SIMULATION_MODE:
+            reconnect_x = right_panel_x + RIGHT_PANEL_WIDTH - 70
+            reconnect_y = right_panel_y - 45  # 더 위로 올림
+            self.reconnect_button_rect = self.renderer.draw_reconnect_button(
+                reconnect_x, reconnect_y, 65, 28
+            )
+        else:
+            self.reconnect_button_rect = None
         
         # 프리셋 패널
         preset_y = right_panel_y + TORQUE_PANEL_HEIGHT + SPACING
