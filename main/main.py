@@ -57,6 +57,50 @@ class RobotControlApp:
         
         print(f"{Colors.GREEN}[System]{Colors.END} Robot Control System initialized")
     
+    def _toggle_passivity_mode(self):
+        """Passivity 모드 토글"""
+        Config.PASSIVITY_MODE = not Config.PASSIVITY_MODE
+        if Config.PASSIVITY_MODE:
+            Config.IK_MODE = False
+            self.controller.set_all_torque(enable=False, enable_feedback=True)
+            self.action_text = "Passivity Mode: ON (Torque OFF)"
+            self.last_passivity_state = True
+        else:
+            self.controller.set_all_torque(enable=True, enable_feedback=False)
+            self.action_text = "Controller Mode: ON (Torque ON)"
+            self.last_passivity_state = False
+    
+    def _toggle_ik_mode(self):
+        """IK 모드 토글"""
+        Config.IK_MODE = not Config.IK_MODE
+        if Config.IK_MODE:
+            self.last_passivity_state = Config.PASSIVITY_MODE
+            Config.PASSIVITY_MODE = False
+            self.controller.set_all_torque(enable=True, enable_feedback=False)
+            self.action_text = "IK Mode: ON (Webcam Starting...)"
+            self._start_webcam()
+        else:
+            self.action_text = "IK Mode: OFF (Webcam Stopped)"
+            self._stop_webcam()
+            self.controller.set_all_torque(True)
+            self.action_text = "Controller Mode: ON"
+    
+    def _start_webcam(self):
+        """웹캠 프로세스 시작"""
+        if not self.webcam_process or not self.webcam_process.is_alive():
+            self.webcam_process = multiprocessing.Process(target=webcam_process)
+            self.webcam_process.daemon = True
+            self.webcam_process.start()
+    
+    def _stop_webcam(self):
+        """웹캠 프로세스 종료"""
+        if self.webcam_process and self.webcam_process.is_alive():
+            self.webcam_process.terminate()
+            self.webcam_process.join(timeout=1)
+            if self.webcam_process.is_alive():
+                self.webcam_process.kill()
+            self.webcam_process = None
+    
     def handle_events(self):
         """이벤트 처리"""
         current_time = pygame.time.get_ticks()
@@ -85,44 +129,11 @@ class RobotControlApp:
             if Config.IK_MODE:
                 self.action_text = "Cannot change mode while IK Mode is active"
                 return
-            
-            Config.PASSIVITY_MODE = not Config.PASSIVITY_MODE
-            if Config.PASSIVITY_MODE:
-                # Passivity 모드: 토크 끄고 피드백 켜기
-                Config.IK_MODE = False
-                self.controller.set_all_torque(enable=False, enable_feedback=True)
-                self.action_text = "Passivity Mode: ON (Torque OFF)"
-                self.last_passivity_state = True
-            else:
-                # Controller 모드: 토크 켜고 피드백 끄기
-                self.controller.set_all_torque(enable=True, enable_feedback=False)
-                self.action_text = "Controller Mode: ON (Torque ON)"
-                self.last_passivity_state = False
+            self._toggle_passivity_mode()
         
         # IK Mode 버튼 클릭
-        elif self.ik_button_rect_cache and self.ik_button_rect_cache.collidepoint(mouse_pos): #버튼 내부에 마우가 있는지 확인
-            Config.IK_MODE = not Config.IK_MODE
-            if Config.IK_MODE:
-                # IK 모드: 현재 상태 저장 후 Passivity 강제 종료, 토크 켜고 피드백 끄고 웹캠 시작
-                self.last_passivity_state = Config.PASSIVITY_MODE
-                Config.PASSIVITY_MODE = False
-                self.controller.set_all_torque(enable=True, enable_feedback=False)
-                self.action_text = "IK Mode: ON (Webcam Starting...)"
-                # 웹캠 프로세스 시작
-                if not self.webcam_process or not self.webcam_process.is_alive():
-                    import multiprocessing
-                    self.webcam_process = multiprocessing.Process(target=webcam_process)
-                    self.webcam_process.daemon = True
-                    self.webcam_process.start()
-            else:
-                # IK 모드 종료: 웹캠 종료
-                self.action_text = "IK Mode: OFF (Webcam Stopped)"
-                if self.webcam_process and self.webcam_process.is_alive():
-                    self.webcam_process.terminate()
-                    self.webcam_process.join(timeout=1)
-                    if self.webcam_process.is_alive():
-                        self.webcam_process.kill()
-                    self.webcam_process = None
+        elif self.ik_button_rect_cache and self.ik_button_rect_cache.collidepoint(mouse_pos):
+            self._toggle_ik_mode()
         
         # 프리셋 버튼 클릭
         for preset_data in self.preset_rects_cache:
@@ -178,58 +189,10 @@ class RobotControlApp:
             print(f"{Colors.CYAN}[Logger]{Colors.END} {status}")
         
         elif event.key == pygame.K_p and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
-            Config.PASSIVITY_MODE = not Config.PASSIVITY_MODE
-            if Config.PASSIVITY_MODE:
-                Config.IK_MODE = False
-                self.controller.set_all_torque(enable=False, enable_feedback=True)
-                self.action_text = "Passivity Mode: ON"
-                self.last_passivity_state = True
-            else:
-                self.controller.set_all_torque(enable=True, enable_feedback=False)
-                self.action_text = "Controller Mode: ON"
-                self.last_passivity_state = False
+            self._toggle_passivity_mode()
         
         elif event.key == pygame.K_i and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
-            Config.IK_MODE = not Config.IK_MODE
-            if Config.IK_MODE:
-                Config.PASSIVITY_MODE = False
-                self.controller.set_all_torque(enable=True, enable_feedback=False)
-                self.action_text = "IK Mode: ON"
-                if not self.webcam_process or not self.webcam_process.is_alive():
-                    import multiprocessing
-                    self.webcam_process = multiprocessing.Process(target=webcam_process)
-                    self.webcam_process.daemon = True
-                    self.webcam_process.start()
-            else:
-                self.action_text = "IK Mode: OFF"
-                if self.webcam_process and self.webcam_process.is_alive():
-                    self.webcam_process.terminate()
-                    self.webcam_process.join(timeout=1)
-                    if self.webcam_process.is_alive():
-                        self.webcam_process.kill()
-                    self.webcam_process = None
-                self.controller.set_all_torque(True)
-                self.action_text = "Controller Mode: ON"
-        
-        elif event.key == pygame.K_i and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
-            Config.IK_MODE = not Config.IK_MODE
-            if Config.IK_MODE:
-                Config.PASSIVITY_MODE = False
-                self.controller.set_all_torque(True)
-                self.action_text = "IK Mode: ON"
-                if not self.webcam_process or not self.webcam_process.is_alive():
-                    import multiprocessing
-                    self.webcam_process = multiprocessing.Process(target=webcam_process)
-                    self.webcam_process.daemon = True
-                    self.webcam_process.start()
-            else:
-                self.action_text = "IK Mode: OFF"
-                if self.webcam_process and self.webcam_process.is_alive():
-                    self.webcam_process.terminate()
-                    self.webcam_process.join(timeout=1)
-                    if self.webcam_process.is_alive():
-                        self.webcam_process.kill()
-                    self.webcam_process = None
+            self._toggle_ik_mode()
         
         elif not Config.PASSIVITY_MODE and not Config.IK_MODE:
             self._handle_normal_mode_keys(event, current_time)
@@ -252,7 +215,13 @@ class RobotControlApp:
             slot_index = event.key - pygame.K_F2
             preset_name = f"Custom {slot_index + 1}"
             
-            if not (mods & pygame.KMOD_CTRL):
+            if mods & pygame.KMOD_CTRL:
+                # Ctrl + F2~F5: 저장
+                if self.controller.save_custom_preset(slot_index):
+                    self.action_text = f"Saved preset: {preset_name}"
+                    self.logger.log(self.controller.target_positions, f"Saved: {preset_name}")
+            else:
+                # F2~F5: 로드
                 if self.controller.load_custom_preset(slot_index):
                     self.active_preset = preset_name
                     self.action_text = f"Loaded preset: {preset_name}"
@@ -429,10 +398,7 @@ class RobotControlApp:
         # 웹캠 프로세스 종료
         if self.webcam_process and self.webcam_process.is_alive():
             print(f"{Colors.CYAN}[System]{Colors.END} Terminating webcam process...")
-            self.webcam_process.terminate()
-            self.webcam_process.join(timeout=2)
-            if self.webcam_process.is_alive():
-                self.webcam_process.kill()
+            self._stop_webcam()
             print(f"{Colors.GREEN}[System]{Colors.END} Webcam process terminated")
         
         self.action_text = "System Shutdown"

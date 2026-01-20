@@ -29,27 +29,28 @@ class CommandProtocol:
     FEEDBACK = "2"
     POSITION_REQUEST = "3"
     
+    # @staticmethod : 클래스에 속하지만 인스턴스 없이도 호출 가능한 메서드
     @staticmethod
     def build_control_command(positions: List[int]) -> str:
         """위치 제어 명령 생성"""
-        return f"0,{','.join(map(str, positions))}*"
+        return f"{CommandProtocol.CONTROL},{','.join(map(str, positions))}*"
     
     @staticmethod
     def build_torque_command(torque_states: List[bool]) -> str:
         """토크 제어 명령 생성"""
         torque_values = [1 if enabled else 0 for enabled in torque_states]
-        return f"1,{','.join(map(str, torque_values))}*"
+        return f"{CommandProtocol.TORQUE},{','.join(map(str, torque_values))}*"
     
     @staticmethod
     def build_feedback_command(enable: bool) -> str:
         """피드백 제어 명령 생성"""
         state = 1 if enable else 0
-        return f"2,{state},0,0,0,0,0,0*"
+        return f"{CommandProtocol.FEEDBACK},{state},0,0,0,0,0,0*"
     
     @staticmethod
-    def build_position_request() -> str:
+    def build_position_request() -> str: #preset 저장할 때 현재위치 요청
         """현재 위치 요청 명령 생성"""
-        return "3,0,0,0,0,0,0,0*"
+        return f"{CommandProtocol.POSITION_REQUEST},0,0,0,0,0,0,0*"
 
 class MotorController:
     """모터 제어를 담당하는 클래스"""
@@ -68,7 +69,6 @@ class MotorController:
         self.current_positions = [m.default_pos for m in self.motors]
         self.target_positions = [m.default_pos for m in self.motors]
         self.motor_states = [MotorState.IDLE] * len(self.motors)
-        self.velocities = [0.0] * len(self.motors)
         self.all_torque_enabled = True
         self.torque_enabled = [True] * MotorConstants.NUM_MOTORS
         self.is_passivity_first = False
@@ -105,10 +105,6 @@ class MotorController:
                 for i in range(MotorConstants.MAX_PRESET_SLOTS)
             }
     
-    def _is_valid_preset_slot(self, slot_index: int) -> bool:
-        """프리셋 슬롯 인덱스 유효성 검사"""
-        return 0 <= slot_index < MotorConstants.MAX_PRESET_SLOTS
-    
     def _can_execute_in_current_mode(self, action: str) -> bool:
         """현재 모드에서 동작 실행 가능 여부 확인"""
         if Config.PASSIVITY_MODE or Config.IK_MODE:
@@ -117,18 +113,9 @@ class MotorController:
             return False
         return True
     
-    def _is_valid_motor_index(self, motor_index: int) -> bool:
-        """모터 인덱스 유효성 검사"""
-        return 0 <= motor_index < MotorConstants.NUM_MOTORS
-    
-    def _clamp_position(self, motor_index: int, position: float) -> float:
-        """모터 위치를 범위 내로 제한"""
-        motor = self.motors[motor_index]
-        return max(motor.min_val, min(motor.max_val, position))
-    
     def save_custom_preset(self, slot_index: int) -> bool:
         """현재 위치를 Custom 프리셋으로 저장"""
-        if not self._is_valid_preset_slot(slot_index):
+        if not (0 <= slot_index < MotorConstants.MAX_PRESET_SLOTS):
             return False
         
         if Config.PASSIVITY_MODE:
@@ -196,7 +183,7 @@ class MotorController:
         if not self._can_execute_in_current_mode("Preset"):
             return False
         
-        if not self._is_valid_preset_slot(slot_index):
+        if not (0 <= slot_index < MotorConstants.MAX_PRESET_SLOTS):
             return False
         
         preset_name = f"Custom {slot_index + 1}"
@@ -251,7 +238,7 @@ class MotorController:
         if not self._can_execute_in_current_mode("Motor Control"):
             return False
         
-        if not self._is_valid_motor_index(motor_index):
+        if not (0 <= motor_index < MotorConstants.NUM_MOTORS): #모터 index 유효성 검사
             return False
         
         motor = self.motors[motor_index]
@@ -435,10 +422,6 @@ class MotorController:
         current_pos = self.display_positions[motor_index]
         angle = (current_pos / 1023.0) * 300.0
         
-        velocity = 0
-        if not Config.PASSIVITY_MODE:
-            velocity = abs(self.target_positions[motor_index] - self.display_positions[motor_index])
-        
         return {
             'index': motor_index,
             'name': motor.name,
@@ -448,7 +431,6 @@ class MotorController:
             'max': motor.max_val,
             'angle': angle,
             'state': self.motor_states[motor_index],
-            'velocity': velocity,
             'torque_enabled': self.torque_enabled[motor_index]
         }
     
