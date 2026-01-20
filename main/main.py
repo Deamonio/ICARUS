@@ -52,6 +52,9 @@ class RobotControlApp:
         self.passivity_button_rect_cache = None
         self.ik_button_rect_cache = None
         
+        # IK 모드 활성화 전 Passivity 상태 저장
+        self.last_passivity_state = False
+        
         print(f"{Colors.GREEN}[System]{Colors.END} Robot Control System initialized")
     
     def handle_events(self):
@@ -71,8 +74,8 @@ class RobotControlApp:
             elif event.type == pygame.KEYUP:
                 self._handle_key_up(event)
         
-        # 키 반복 처리
-        if not Config.PASSIVITY_MODE:
+        # 키 반복 처리 (Passivity와 IK 모드에서는 비활성화)
+        if not Config.PASSIVITY_MODE and not Config.IK_MODE:
             self._handle_key_repeat(current_time)
     
     def _handle_mouse_click(self, mouse_pos):
@@ -89,20 +92,19 @@ class RobotControlApp:
                 Config.IK_MODE = False
                 self.controller.set_all_torque(enable=False, enable_feedback=True)
                 self.action_text = "Passivity Mode: ON (Torque OFF)"
+                self.last_passivity_state = True
             else:
                 # Controller 모드: 토크 켜고 피드백 끄기
                 self.controller.set_all_torque(enable=True, enable_feedback=False)
                 self.action_text = "Controller Mode: ON (Torque ON)"
+                self.last_passivity_state = False
         
-        # IK Mode 버튼 클릭 (Passivity 모드가 아닐 때만)
-        elif self.ik_button_rect_cache and self.ik_button_rect_cache.collidepoint(mouse_pos):
-            if Config.PASSIVITY_MODE:
-                self.action_text = "Cannot change mode while Passivity Mode is active"
-                return
-            
+        # IK Mode 버튼 클릭
+        elif self.ik_button_rect_cache and self.ik_button_rect_cache.collidepoint(mouse_pos): #버튼 내부에 마우가 있는지 확인
             Config.IK_MODE = not Config.IK_MODE
             if Config.IK_MODE:
-                # IK 모드: 토크 켜고 피드백 끄고 웹캠 시작
+                # IK 모드: 현재 상태 저장 후 Passivity 강제 종료, 토크 켜고 피드백 끄고 웹캠 시작
+                self.last_passivity_state = Config.PASSIVITY_MODE
                 Config.PASSIVITY_MODE = False
                 self.controller.set_all_torque(enable=True, enable_feedback=False)
                 self.action_text = "IK Mode: ON (Webcam Starting...)"
@@ -181,9 +183,11 @@ class RobotControlApp:
                 Config.IK_MODE = False
                 self.controller.set_all_torque(enable=False, enable_feedback=True)
                 self.action_text = "Passivity Mode: ON"
+                self.last_passivity_state = True
             else:
                 self.controller.set_all_torque(enable=True, enable_feedback=False)
                 self.action_text = "Controller Mode: ON"
+                self.last_passivity_state = False
         
         elif event.key == pygame.K_i and not (pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
             Config.IK_MODE = not Config.IK_MODE
@@ -284,7 +288,7 @@ class RobotControlApp:
         step_size = Config.SLOW_STEP_SIZE if mods & pygame.KMOD_SHIFT else Config.FAST_STEP_SIZE
         
         if self.controller.update_target(motor_index, direction, step_size):
-            self.controller.send_control_command()
+            self.controller.send_command('control')
             motor_info = self.controller.get_motor_info(motor_index)
             self.action_text = f"M{motor_index+1} ({motor_info['name']}): {int(motor_info['target'])}"
             self.active_preset = None
@@ -300,8 +304,8 @@ class RobotControlApp:
             del self.last_command_time[event.key]
     
     def _handle_key_repeat(self, current_time):
-        """키 반복 처리 (IK 모드에서는 비활성화)"""
-        if Config.IK_MODE:
+        """키 반복 처리 (IK 모드와 Passivity 모드에서는 비활성화)"""
+        if Config.IK_MODE or Config.PASSIVITY_MODE:
             return
         
         for key in list(self.keys_pressed.keys()):
@@ -311,7 +315,7 @@ class RobotControlApp:
                 step_size = Config.SLOW_STEP_SIZE if mods & pygame.KMOD_SHIFT else Config.FAST_STEP_SIZE
                 
                 if self.controller.update_target(motor_index, direction, step_size):
-                    self.controller.send_control_command()
+                    self.controller.send_command('control')
                 
                 self.last_command_time[key] = current_time + Config.KEY_REPEAT_INTERVAL
     
@@ -348,7 +352,7 @@ class RobotControlApp:
         subtitle = self.renderer.font_tiny.render(
             f"7-DOF Control System | {mode_text} | {passivity_text}", 
             True, UIColors.TEXT_GRAY
-        )
+        ) #antialias : True (텍스트 고품질 처리)
         self.screen.blit(subtitle, (PADDING, PADDING + 35))
         
         # 모터 게이지 (2열 4행)
@@ -373,7 +377,7 @@ class RobotControlApp:
         
         # 모드 제어 패널 (Passivity + IK Mode)
         button_rects = self.renderer.draw_mode_control_panel(
-            right_panel_x, right_panel_y, RIGHT_PANEL_WIDTH, TORQUE_PANEL_HEIGHT
+            right_panel_x, right_panel_y, RIGHT_PANEL_WIDTH, TORQUE_PANEL_HEIGHT, self.last_passivity_state
         )
         self.passivity_button_rect_cache = button_rects['passivity']
         self.ik_button_rect_cache = button_rects['ik']

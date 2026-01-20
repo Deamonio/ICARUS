@@ -11,6 +11,9 @@ from config import Colors
 TABLE_WIDTH_CM = 60.0
 TABLE_HEIGHT_CM = 45.0
 
+# 카메라 설정
+CAMERA_INDEX = 2  # 카메라 인덱스 (0=기본 카메라, 1=외장 카메라 등)
+
 # 화면 크기 설정
 WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
@@ -133,15 +136,15 @@ def webcam_process():
             model = None
             yolo_enabled = False
         
-        # 웹캠 열기 (DSHOW 백엔드로 카메라 0 사용)
-        print(f"{Colors.CYAN}[Webcam]{Colors.END} Opening camera 0 with DSHOW backend...")
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        # 웹캠 열기 (DSHOW 백엔드 사용)
+        print(f"{Colors.CYAN}[Webcam]{Colors.END} Opening camera {CAMERA_INDEX} with DSHOW backend...")
+        cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
         
         if not cap.isOpened():
-            print(f"{Colors.RED}[Webcam]{Colors.END} Failed to open camera 0 with DSHOW")
+            print(f"{Colors.RED}[Webcam]{Colors.END} Failed to open camera {CAMERA_INDEX} with DSHOW")
             return
         
-        print(f"{Colors.GREEN}[Webcam]{Colors.END} Camera 0 opened successfully")
+        print(f"{Colors.GREEN}[Webcam]{Colors.END} Camera {CAMERA_INDEX} opened successfully")
         
         cap.set(3, WINDOW_WIDTH)
         cap.set(4, WINDOW_HEIGHT)

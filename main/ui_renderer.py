@@ -138,7 +138,7 @@ class UIRenderer:
         max_x = bar_x + bar_width - max_text.get_width()
         self.screen.blit(max_text, (max_x, bar_y + bar_height + 2))
     
-    def draw_mode_control_panel(self, x, y, width, height):
+    def draw_mode_control_panel(self, x, y, width, height, last_passivity_state=False):
         """모드 제어 패널 (Passivity + IK Mode)"""
         from config import Config
         
@@ -158,10 +158,10 @@ class UIRenderer:
         
         passivity_rect = pygame.Rect(x + inner_padding, y + 35, width - inner_padding * 2, button_height)
         
-        # IK 모드가 켜져있으면 Passivity 버튼 비활성화 (회색)
+        # IK 모드가 켜져있으면 Passivity 버튼 비활성화 (회색, 이전 상태 텍스트 유지)
         if Config.IK_MODE:
             base_color = UIColors.TORQUE_HOVER  # 비활성화 회색
-            status_text = "PASSIVITY"
+            status_text = "PASSIVITY" if last_passivity_state else "CONTROLLER"
         elif Config.PASSIVITY_MODE:
             base_color = UIColors.TORQUE_OFF
             status_text = "PASSIVITY"
